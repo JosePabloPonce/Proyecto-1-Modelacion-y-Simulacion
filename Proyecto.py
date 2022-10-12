@@ -1,12 +1,14 @@
 import random
 import math
 import simpy
+import numpy as np
+
 
 SEMILLA = 30
 NUM_PELUQUEROS = 1
 TIEMPO_CORTE_MIN = 15
 TIEMPO_CORTE_MAX = 30
-T_LLEGADAS = 20
+T_LLEGADAS = np.random.poisson(20) ###########
 TIEMPO_SIMULACION = 120
 TOT_CLIENTES = 5
 
@@ -19,7 +21,8 @@ def cortar(cliente):
 	global dt  #Para poder acceder a la variable dt declarada anteriormente
 	R = random.random()  # Obtiene un numero aleatorio y lo guarda en R
 	tiempo = TIEMPO_CORTE_MAX - TIEMPO_CORTE_MIN  
-	tiempo_corte = TIEMPO_CORTE_MIN + (tiempo*R) # Distribucion uniforme
+	#tiempo_corte = TIEMPO_CORTE_MIN + (tiempo*R) # Distribucion uniforme
+	tiempo_corte = np.random.exponential(5)
 	yield env.timeout(tiempo_corte) # deja correr el tiempo n minutos
 	print(" \o/ Corte listo a %s en %.2f minutos" % (cliente,tiempo_corte))
 	dt = dt + tiempo_corte # Acumula los tiempos de uso de la i
