@@ -98,5 +98,3 @@ print("Total de clientes: ", CLIENTES)
 print("Tiempo promedio de un cliente en la cola: ", tiempoEspera / CLIENTES)
 print("Numero de clientes en la cola por hora: ", (1 / (tiempoEspera / CLIENTES)) if tiempoEspera > 0 else 0)
 print("Grado de utilizacion de cada cajero: ", CLIENTES/CANTIDAD_CAJEROS)
-
-
