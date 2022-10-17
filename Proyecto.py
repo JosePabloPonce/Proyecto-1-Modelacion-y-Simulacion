@@ -1,113 +1,102 @@
 import random
 import math
-import simpy
+from scipy.stats import poisson
 import numpy as np
+import simpy
 
 
-SEMILLA = 30
-NUM_PELUQUEROS = 1
-TIEMPO_CORTE_MIN = 15
-TIEMPO_CORTE_MAX = 30
-T_LLEGADAS = np.random.poisson(20) ###########
-TIEMPO_SIMULACION = 120
-TOT_CLIENTES = 5
-
-te  = 0.0 # tiempo de espera total
-dt  = 0.0 # duracion de servicio total
-fin = 0.0 # minuto en el que finaliza
+#Variables Iniciales
+TOTAL_CLIENTES_HORA = 100 #LAMBDA
+CLIENTES = 0 
+tiempoEspera = 0 
+tiempoFinal = 0 
+CANTIDAD_CAJEROS = 5
 
 
-def cortar(cliente):
-	global dt  #Para poder acceder a la variable dt declarada anteriormente
-	R = random.random()  # Obtiene un numero aleatorio y lo guarda en R
-	tiempo = TIEMPO_CORTE_MAX - TIEMPO_CORTE_MIN  
-	#tiempo_corte = TIEMPO_CORTE_MIN + (tiempo*R) # Distribucion uniforme
-	tiempo_corte = np.random.exponential(5)
-	yield env.timeout(tiempo_corte) # deja correr el tiempo n minutos
-	print(" \o/ Corte listo a %s en %.2f minutos" % (cliente,tiempo_corte))
-	dt = dt + tiempo_corte # Acumula los tiempos de uso de la i
+class Cajero:
+
+  CLIENTE_X_HORA = 20 #LAMBDA1
+
+  def __init__(self, env):
+    #Configuracion de Simpy, se crean los recursos para los cajeros
+    self.env = env
+    self.lista_cajeros = [simpy.Resource(self.env, capacity=1) for j in range(CANTIDAD_CAJEROS)] 
+    self.capacidad_cajeros = [0 for k in range(CANTIDAD_CAJEROS)] 
+  
+  def despacho_cliente(self, cliente):
+    beta = 1 / self.CLIENTE_X_HORA  #Beta = 1/Lambda
+    tiempo_despacho = np.random.exponential(beta)
+    yield self.env.timeout(tiempo_despacho)  
+    print('No. Simulacion: ' + str(self.env.now)[:4] + ' - Cliente ' + str(cliente) + ' despachado en ' + str(tiempo_despacho*60)[:4] +' min')
+
+def client(env, client_id, Cajero):
+  global CLIENTES
+  global tiempoEspera
+  global tiempoFinal
+
+  tiempo_inicio = env.now
+  print('No. Simulacion: ' + str(env.now)[:4] + ' - El cliente ' + str(client_id) + ' esta en la espera de un cajero')
 
 
-def cliente (env, name, personal ):
-	global te
-	global fin
-	llega = env.now # Guarda el minuto de llegada del cliente
-	print ("---> %s llego a peluqueria en minuto %.2f" % (name, llega))
-	with personal.request() as request: # Espera su turno
-		yield request # Obtiene turno
-		pasa = env.now # Guarda el minuto cuado comienza a ser atendido
-		espera = pasa - llega # Calcula el tiempo que espero
-		te = te + espera # Acumula los tiempos de espera
-		print ("**** %s pasa con peluquero en minuto %.2f habiendo esperado %.2f" % (name, pasa, espera))
-		yield env.process(cortar(name)) # Invoca al proceso cortar
-		deja = env.now #Guarda el minuto en que termina el proceso cortar 
-		print ("<--- %s deja peluqueria en minuto %.2f" % (name, deja))
-		fin = deja # Conserva globalmente el ultimo minuto de la simulacion
-	
+  opcion_cajero = []
 
-def principal (env, personal):
-	llegada = 0
-	i = 0
-	for i in range(TOT_CLIENTES): # Para n clientes
-		R = random.random()
-		llegada = -T_LLEGADAS * math.log(R) # Distribucion exponencial
-		yield env.timeout(llegada)  # Deja transcurrir un tiempo entre uno y otro
-		i += 1
-		env.process(cliente(env, 'Cliente %d' % i, personal)) 
+  #Se comparan los cajeros y se verifica que opcion de cajero es la mejor
+  for i in range(CANTIDAD_CAJEROS):
+    if Cajero.capacidad_cajeros[i] == min(Cajero.capacidad_cajeros):
+      opcion_cajero.append(i)
 
+  ##########################################
+  cajero_actual = random.choice(opcion_cajero)
 
-def cortar(cliente):
-	global dt  #Para poder acceder a la variable dt declarada anteriormente
-	R = random.random()  # Obtiene un numero aleatorio y lo guarda en R
-	tiempo = TIEMPO_CORTE_MAX - TIEMPO_CORTE_MIN  
-	tiempo_corte = TIEMPO_CORTE_MIN + (tiempo*R) # Distribucion uniforme
-	yield env.timeout(tiempo_corte) # deja correr el tiempo n minutos
-	print(" \o/ Corte listo a %s en %.2f minutos" % (cliente,tiempo_corte))
-	dt = dt + tiempo_corte # Acumula los tiempos de uso de la i
+  #Liberamos el recurso para poder solicitarlo nuevamente
+  with Cajero.lista_cajeros[cajero_actual].request() as req:
+    Cajero.capacidad_cajeros[cajero_actual] += 1
+  
+
+    yield req
+    tiempo_finalizacion = env.now
+    print('No. Simulacion: ' + str(env.now)[:4] + ' - Cliente ' + str(client_id) + ' esta siendo atendido por el cajero ' + str(cajero_actual))
+
+    Cajero.capacidad_cajeros[cajero_actual] -= 1
+
+    
+    yield env.process(Cajero.despacho_cliente(client_id))
+    print('No. Simulacion: ' + str(env.now)[:4] + ' - Cliente ' + str(client_id) + ' fue atendido por el cajero ' + str(cajero_actual))
+    tiempoFinal = env.now
+    CLIENTES += 1
+    tiempoEspera += tiempo_finalizacion - tiempo_inicio
+
+def poissonMedTime(x, lambda_val):
+  return -(math.log(1 - x) / lambda_val)
 
 
-def cliente (env, name, personal ):
-	global te
-	global fin
-	llega = env.now # Guarda el minuto de llegada del cliente
-	print ("---> %s llego a peluqueria en minuto %.2f" % (name, llega))
-	with personal.request() as request: # Espera su turno
-		yield request # Obtiene turno
-		pasa = env.now # Guarda el minuto cuado comienza a ser atendido
-		espera = pasa - llega # Calcula el tiempo que espero
-		te = te + espera # Acumula los tiempos de espera
-		print ("**** %s pasa con peluquero en minuto %.2f habiendo esperado %.2f" % (name, pasa, espera))
-		yield env.process(cortar(name)) # Invoca al proceso cortar
-		deja = env.now #Guarda el minuto en que termina el proceso cortar 
-		print ("<--- %s deja peluqueria en minuto %.2f" % (name, deja))
-		fin = deja # Conserva globalmente el ultimo minuto de la simulacion
-	
+# function that set uo the enviorment with the time intervals
+def setup(env, Cajero):
+  client_id = 0
 
-def principal (env, personal):
-	llegada = 0
-	i = 0
-	for i in range(TOT_CLIENTES): # Para n clientes
-		R = random.random()
-		llegada = -T_LLEGADAS * math.log(R) # Distribucion exponencial
-		yield env.timeout(llegada)  # Deja transcurrir un tiempo entre uno y otro
-		i += 1
-		env.process(cliente(env, 'Cliente %d' % i, personal)) 
+  while True:
+    CLIENTES_interval = poissonMedTime(random.random(), TOTAL_CLIENTES_HORA)
+    yield env.timeout(CLIENTES_interval)
+    env.process(client(env, client_id, Cajero))
+    client_id += 1
 
-print ("------------------- Bienvenido Simulacion Peluqueria ------------------")
-random.seed (SEMILLA)  # Cualquier valor
-env = simpy.Environment() # Crea el objeto entorno de simulacion
-personal = simpy.Resource(env, NUM_PELUQUEROS) #Crea los recursos (peluqueros)
-env.process(principal(env, personal)) #Invoca el proceso princial
-env.run() #Inicia la simulacion
+#Clean globals
+CLIENTES = 0
+tiempoEspera = 0
+caja_request = 0
 
 
-print ("\n---------------------------------------------------------------------")
-print ("\nIndicadores obtenidos: ")
+env = simpy.Environment()
 
-lpc = te / fin
-print ("\nLongitud promedio de la cola: %.2f" % lpc)
-tep = te / TOT_CLIENTES
-print ("Tiempo de espera promedio = %.2f" % tep)
-upi = (dt / fin) / NUM_PELUQUEROS
-print ("Uso promedio de la instalacion = %.2f" % upi)
-print ("\n---------------------------------------------------------------------")
+Cajero = Cajero(env)
+
+env.process(setup(env, Cajero))
+env.run(until=1)
+
+
+print("Total de clientes: ", CLIENTES)
+print("Tiempo promedio de un cliente en la cola: ", tiempoEspera / CLIENTES)
+print("Numero de clientes en la cola por hora: ", (1 / (tiempoEspera / CLIENTES)) if tiempoEspera > 0 else 0)
+print("Grado de utilizacion de cada cajero: ", CLIENTES/CANTIDAD_CAJEROS)
+
+
